@@ -1,0 +1,43 @@
+---
+title: "Docker Assignment"
+output: html_notebook
+---
+
+# Create a 5 by 10 matrix of random integers
+```{r}
+set.seed(420)
+
+random_ints <- matrix(sample(1:100, 50, replace=TRUE), nrow=5, ncol=10)
+# Can set the max integer limit to higher if needed by modifying 100 to a different number.
+
+print(random_ints)
+```
+# Define column names as cond1, cond2, cond3, cond4, cond5, ctrl1, ctrl2, ctrl3, ctrl4, ctrl5
+```{r}
+colnames(random_ints) <- c('cond1', 'cond2', 'cond3', 'cond4', 'cond5', 'ctrl1',
+                           'ctrl2', 'ctrl3', 'ctrl4', 'ctrl5')
+
+print(random_ints)
+```
+# Define row names as gene1, gene2, gene3 ...
+```{r}
+rownames(random_ints) <- c('gene1', 'gene2', 'gene3', 'gene4', 'gene5')
+
+print(random_ints)
+```
+
+# Compute the fold change for each gene.
+```{r}
+cond_means <- rowMeans(random_ints[, 1:5])
+ctrl_means <- rowMeans(random_ints[, 6:10])
+
+fold_change <- cond_means / ctrl_means
+
+df_fold_change <- data.frame(
+  Gene = rownames(random_ints),
+  Fold_Change = fold_change
+)
+
+print(df_fold_change)
+```
+
