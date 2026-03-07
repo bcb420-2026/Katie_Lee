@@ -1,0 +1,94 @@
+---
+title: "A1_KatieLee"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Table of Contents
+
+## 1. Introduction
+
+
+### Required libraries and functions:
+```{r message=FALSE}
+library(knitr)
+library(GEOquery)
+library(readr)
+library(biomaRt)
+library(dplyr)
+
+kable_head <- function(x, n = 5, caption = NULL) {
+  knitr::kable(utils::head(x, n), caption = caption)
+}
+```
+
+## 2. Preparing the Dataset
+
+### 2.1 Downloading the Dataset
+
+```{r}
+# Downloads data into a new or existing directory, default to data
+fetch_geo_supp <- function(gse, destdir = "data") {
+  dir.create(destdir, showWarnings = FALSE, recursive = TRUE)
+  GEOquery::getGEOSuppFiles(GEO = gse, baseDir = destdir, makeDirectory = TRUE)
+  invisible(file.path(destdir, gse))
+}
+
+gse <- "GSE226507"
+geo_path <- file.path("data", gse)
+
+# Download the dataset if it doesn't already exist
+if (!dir.exists(geo_path)) {
+  fetch_geo_supp(gse = gse)
+}
+
+# GEO file contains only one file
+geo_file <- list.files(file.path("data", gse), full.names = TRUE)[1]
+```
+
+### 2.2 Raw Data Table
+```{r}
+# Reading the dataset
+geo_df <- readr::read_tsv(geo_file, show_col_types = FALSE)
+
+kable_head(geo_df, caption=paste(gse, ": Raw Data Table Preview"))
+```
+### 2.3 Summary Statistics
+
+
+## 3. Cleaning the Dataset
+
+### 3.1 HUGO Gene Symbol Mapped Table
+The chosen GSE file does not have any version suffixes, so it does not need to be removed. 
+```{r}
+# Getting Gene ID Column
+id_col <- names(geo_df)[1]
+ids <- geo_df[[1]] |> as.character()
+
+# Getting ensembl mart and dataset for all the Gene IDs
+ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+```
+
+```{r}
+# Mapping the Gene ID to HUGO Gene Symbol
+ensembl_ids <- unique(ids)
+
+map <- getBM(
+    attributes = c("ensembl_gene_id", "hgnc_symbol"),
+    filters = "ensembl_gene_id",
+    values = ensembl_ids,
+    mart = ensembl
+  )
+
+# Adding the mapped HGNC symbol into GSE dataframe
+df_mapped <- geo_df %>%
+  left_join(map, by=c("gene_id" = "ensembl_gene_id")) %>%
+  dplyr::select(gene_id, hgnc_symbol, everything())
+  
+kable_head(df_mapped, caption=paste(gse, ": Mapped Table Preview"))
+```
+
