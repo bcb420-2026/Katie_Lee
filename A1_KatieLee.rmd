@@ -21,12 +21,13 @@ library(readr)
 library(biomaRt)
 library(dplyr)
 
+# Prints the first n number of dataframe x, with an optional caption
 kable_head <- function(x, n = 5, caption = NULL) {
   knitr::kable(utils::head(x, n), caption = caption)
 }
 ```
 
-## 2. Preparing the Dataset
+## 2. Preparing and Cleaning the Dataset
 
 ### 2.1 Downloading the Dataset
 
@@ -53,16 +54,59 @@ geo_file <- list.files(file.path("data", gse), full.names = TRUE)[1]
 ### 2.2 Raw Data Table
 ```{r}
 # Reading the dataset
-geo_df <- readr::read_tsv(geo_file, show_col_types = FALSE)
+geo_df_raw <- readr::read_tsv(geo_file, show_col_types = FALSE)
 
-kable_head(geo_df, caption=paste(gse, ": Raw Data Table Preview"))
+kable_head(geo_df_raw, caption=paste(gse, ": Raw Data Table Preview"))
 ```
-### 2.3 Summary Statistics
+### 2.3 Remove Extra Annotations
+The data set includes extra annotations, such as gene length, start, end, description, etc. To simplify the downstream analyses, these annotations were removed.
+```{r}
+# List of all the samples in the data set
+sample_cols <- c("WC1","WC2","WC3","WSD1","WSD2","WSD3",
+                 "KC1","KC2","KC3","KSD1","KSD2","KSD3")
 
+# Remove everything other than the sample columns
+geo_df <- geo_df_raw[, c("gene_id", sample_cols)]
+```
+### 2.4 Checking Data Quality
+I checked the dataset for any duplicates in the sample or genes. I also checked for missing values.
+```{r}
+any(duplicated(geo_df$gene_id)) # True if duplicate genes
+any(duplicated(colnames(geo_df))) # True if duplicate samples
 
-## 3. Cleaning the Dataset
+sum(is.na(geo_df))
+```
+This dataset does not contain any duplicates or missing values, so I proceeded with the downstream analyses.
 
-### 3.1 HUGO Gene Symbol Mapped Table
+### 2.5 Libary Size
+I calculated the library size for each sample. To do this, I calculated total counts across all genes for a sample. 
+```{r}
+library_sizes <- colSums(geo_df[ , -1], na.rm = TRUE) # geo_df[, -1] uses only the sample count columns
+
+library_sizes_df <- data.frame(
+  sample = names(library_sizes),
+  library_size = library_sizes
+)
+
+# Removes duplicate row names (sample col already exists)
+rownames(library_sizes_df) <- NULL
+
+kable_head(library_sizes_df, n=12, caption=paste(gse, ": Library Size Table"))
+```
+
+I calculated the summary statistics of gene expressions for each sample. 
+```{r}
+sample_stats <- data.frame(
+  sample = colnames(geo_df)[-1],
+  mean = colMeans(geo_df[, -1]),
+  median = apply(geo_df[, -1], 2, median),
+  sd_expression = apply(geo_df[, -1], 2, sd)
+)
+rownames(sample_stats) <- NULL
+
+kable_head(sample_stats, 12, caption="Summary Statistics for Each Sample")
+```
+### 2.5 HUGO Gene Symbol Mapped Table
 The chosen GSE file does not have any version suffixes, so it does not need to be removed. 
 ```{r}
 # Getting Gene ID Column
@@ -91,4 +135,9 @@ df_mapped <- geo_df %>%
   
 kable_head(df_mapped, caption=paste(gse, ": Mapped Table Preview"))
 ```
+
+## 3. Normalization of Data
+
+
+## 4. Differential Gene Expression
 
