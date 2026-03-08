@@ -82,7 +82,7 @@ Using **GSE122380**, confirm whether the ID column contains Ensembl IDs with ver
 3. Map the identifiers to HGNC symbols.
 4. What is different about this file? 
 
-This file is empty!
+The file is formatted weirdly and the columns are not matched to the samples.
 
 ```{r message=FALSE}
 fetch_geo_supp <- function(gse, destdir = "data") {
@@ -96,11 +96,44 @@ gse <- "GSE122380"
 geo_path <- file.path("data", gse)
 
 fetch_geo_supp(gse = gse)
-file <- list.files(file.path("data", gse), full.names = TRUE)
+file <- list.files(file.path("data", gse), full.names = TRUE)[1]
 df <- readr::read_tsv(file, show_col_types = FALSE)
 
 df <- df[1:20, ]
 head(df)
+```
+
+```{r}
+# 3. Create a new column with versions stripped.
+strip_ensembl_version <- function(x) sub("\\..*$", "", x)
+
+id_col <- names(df)[1]
+ids <- df[[1]] |> as.character()
+if (sum(grepl("\\.[0-9]+$", ids)) >= 1) {
+  ids <- strip_ensembl_version(ids)
+}
+df$versions_stripped <- ids
+head(df)
+```
+
+```{r}
+# 4. Map the identifiers to HGNC symbols.
+ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+map <- getBM(
+    attributes = c("ensembl_gene_id", "hgnc_symbol"),
+    filters = "ensembl_gene_id",
+    values = ids,
+    mart = ensembl
+  )
+
+map$ensembl_gene_id <- as.character(map$ensembl_gene_id)
+
+df_mapped <- df %>%
+  left_join(map, by=c("versions_stripped" = "ensembl_gene_id")) %>%
+  dplyr::select(Gene_id, hgnc_symbol, everything())
+
+
+df_mapped
 ```
 
 ## Exercise 3 - 
