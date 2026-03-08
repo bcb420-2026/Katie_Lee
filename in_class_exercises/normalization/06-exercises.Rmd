@@ -8,8 +8,113 @@ Using **GSE119732**,
   1. Map the distribution of the samples as a box plot and a density plot using only the raw data.
   2.  Add colours to the plot separating the different variables in the model
   3.  Filter out lowly expressed genes and re plot the distributions.
+```{r}
+fetch_geo_supp <- function(gse, destdir = "data") {
+  dir.create(destdir, showWarnings = FALSE, recursive = TRUE)
+  GEOquery::getGEOSuppFiles(GEO = gse, baseDir = destdir, makeDirectory = TRUE)
+  invisible(file.path(destdir, gse))
+}
 
+gse <- "GSE119732"
+geo_path <- file.path("data", gse)
 
+# Download the dataset if it doesn't already exist
+if (!dir.exists(geo_path)) {
+  fetch_geo_supp(gse = gse)
+}
+
+# GEO file contains only one file
+geo_file <- list.files(file.path("data", gse), full.names = TRUE)[1]
+geo_df_raw <- readr::read_tsv(geo_file, show_col_types = FALSE)
+head(geo_df_raw)
+```
+```{r}
+# 1. Map the distribution of the samples as a box plot and a density plot using only the raw data.
+library(tidyverse)
+
+plot_box <- function(mat, main = "", ylab = "log2(counts+1)") {
+  df <- as.data.frame(mat)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1))
+
+  ggplot(df_long, aes(x = sample, y = value)) +
+    geom_boxplot(outlier.size = 0.2) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+    labs(title = main, x = "Sample", y = ylab)
+}
+
+plot_density <- function(mat, main = "") {
+  df <- as.data.frame(mat)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1))
+
+  ggplot(df_long, aes(x = value, colour = sample)) +
+    geom_density() +
+    theme_bw() +
+    labs(title = main, x = "log2(counts+1)", y = "Density") +
+    guides(colour = "none")
+}
+
+plot_box(geo_df_raw[,2:ncol(geo_df_raw)])
+plot_density(geo_df_raw[,2:ncol(geo_df_raw)])
+```
+```{r}
+# 2.  Add colours to the plot separating the different variables in the model
+
+plot_box_colour <- function(mat, metadata, group, main = "", ylab = "log2(counts+1)") {
+  df <- as.data.frame(mat)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1)) |>
+    left_join(metadata, by = "sample")
+
+  ggplot(df_long, aes(x = sample, y = value, fill= .data[[group]])) +
+    geom_boxplot(outlier.size = 0.2) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+    labs(title = main, x = "Sample", y = ylab, fill=group)
+}
+
+plot_density_colour <- function(mat, metadata, group, main = "") {
+  df <- as.data.frame(mat)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1)) |>
+    left_join(metadata, by = "sample")
+
+  ggplot(df_long, aes(x = value, colour = .data[[group]])) +
+    geom_density() +
+    theme_bw() +
+    labs(title = main, x = "log2(counts+1)", y = "Density", colour = group)
+}
+
+count_mat <- as.data.frame(geo_df_raw[, 2:ncol(geo_df_raw)])
+rownames(count_mat) <- geo_df_raw[[1]]
+
+sample_info <- data.frame(
+  sample = colnames(count_mat)
+) |>
+  mutate(group = substr(sample, 1, 1))
+
+plot_box_colour(count_mat, sample_info, "group")
+plot_density_colour(count_mat, sample_info, "group")
+
+```
+```{r}
+#   3.  Filter out lowly expressed genes and re plot the distributions.
+to_keep <- edgeR::filterByExpr(count_mat,min.count = 3)
+count_mat_filtered <- count_mat[to_keep,]
+
+plot_box_colour(count_mat_filtered, sample_info, "group")
+plot_density_colour(count_mat_filtered, sample_info, "group")
+```
 
 ## Exercise 2 — https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE122380
 
@@ -18,6 +123,47 @@ Using **GSE122380**, confirm whether the ID column contains Ensembl IDs with ver
  1. Map the distribution of the samples as a box plot and a density plot using only the raw data.
   2.  Add colours to the plot separating the different variables in the model
   3.  Filter out lowly expressed genes and re plot the distributions.
+  
+```{r}
+# 1. Map the distribution of the samples as a box plot and a density plot using only the raw data.
+
+gse <- "GSE122380"
+geo_path <- file.path("data", gse)
+
+# Download the dataset if it doesn't already exist
+if (!dir.exists(geo_path)) {
+  fetch_geo_supp(gse = gse)
+}
+
+# GEO file contains only one file
+geo_file <- list.files(file.path("data", gse), full.names = TRUE)[2]
+geo_df_raw <- readr::read_tsv(geo_file, show_col_types = FALSE)
+head(geo_df_raw)
+
+plot_box(geo_df_raw[,2:ncol(geo_df_raw)])
+plot_density(geo_df_raw[,2:ncol(geo_df_raw)])
+```
+```{r}
+# 2.  Add colours to the plot separating the different variables in the model
+
+count_mat <- as.data.frame(geo_df_raw[, 2:ncol(geo_df_raw)])
+rownames(count_mat) <- geo_df_raw[[1]]
+
+sample_info <- data.frame(
+  sample = colnames(count_mat)
+) |>
+  mutate(group = substr(sample, 1, 1))
+
+plot_box_colour(count_mat, sample_info, "group")
+plot_density_colour(count_mat, sample_info, "group")
+
+# 3.  Filter out lowly expressed genes and re plot the distributions.
+to_keep <- edgeR::filterByExpr(count_mat,min.count = 3)
+count_mat_filtered <- count_mat[to_keep,]
+
+plot_box_colour(count_mat_filtered, sample_info, "group")
+plot_density_colour(count_mat_filtered, sample_info, "group")
+```
 
 ## Exercise 3 - 
  
