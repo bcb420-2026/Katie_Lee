@@ -20,6 +20,8 @@ library(GEOquery)
 library(readr)
 library(biomaRt)
 library(dplyr)
+library(tidyverse)
+library(edgeR)
 
 # Prints the first n number of dataframe x, with an optional caption
 kable_head <- function(x, n = 5, caption = NULL) {
@@ -132,12 +134,118 @@ map <- getBM(
 df_mapped <- geo_df %>%
   left_join(map, by=c("gene_id" = "ensembl_gene_id")) %>%
   dplyr::select(gene_id, hgnc_symbol, everything())
-  
-kable_head(df_mapped, caption=paste(gse, ": Mapped Table Preview"))
+```
+### 2.6 Cleaning Mapped Data
+Many genes did not map to a HUGO symbol, so they were removed from the analysis. 
+```{r}
+df_mapped <- df_mapped %>%
+  filter(!is.na(hgnc_symbol), hgnc_symbol != "")
 ```
 
+Some genes also mapped to the same HUGO symbol, so I used the mean expression of these genes. No genes had multiple HUGO symbols.
+```{r}
+# Checking if there are any genes that map to the same HUGO symbol
+if (any(duplicated(df_mapped$hgnc_symbol))) {
+  df_mapped <- df_mapped %>%
+    group_by(hgnc_symbol) %>%
+    summarise(across(where(is.numeric), mean), .groups = "drop") 
+  # finds mean expression and drops the grouping
+}
+```
+I cleaned the dataframe, so it has the HUGO symbol as rownames.
+```{r}
+df_mapped <- as.data.frame(df_mapped)
+rownames(df_mapped) <- df_mapped$hgnc_symbol
+df_mapped$hgnc_symbol <- NULL
+
+kable_head(df_mapped, n=10, caption="Expression Data of Mapped HUGO Symbols for GSE226507")
+```
 ## 3. Normalization of Data
+### 3.1 Separating Sample Groups
+```{r}
+# All the treatment groups of this experiment
+treatments <- c("WC", "WSD", "KC", "KSD")
+# Gets the columns with the sample expression data
+samples <- colnames(df_mapped)
 
+# Groups the sample to the treatment group it starts with
+samples_to_groups <- data.frame(
+  sample=samples,
+  group=sapply(samples, function(x) treatments[startsWith(x, treatments)])
+)
 
+rownames(samples_to_groups) <- NULL
+
+samples_to_groups
+```
+
+### 3.2 Filtering Lowly Expressed Genes
+```{r}
+group <- factor(samples_to_groups$group)
+design <- model.matrix(~ 0 + group, data = samples_to_groups)
+to_keep <- edgeR::filterByExpr(df_mapped, min.count = 3, design = design)
+df_mapped_filtered <- df_mapped[to_keep, ]
+```
+
+### 3.4 TMM Normalization
+```{r}
+dge <- DGEList(counts = df_mapped_filtered)
+dge_filtered <- dge[filterByExpr(dge),]
+dge_filtered  <- calcNormFactors(dge_filtered , method = "TMM")
+df_normalized <- cpm(dge_filtered , log = FALSE, prior.count = 1)
+
+kable_head(df_normalized, n=10, caption="TMM-normalized logCPM expression matrix of GSE226507")
+```
+### 3.5 Comparison of Pre- and Post Normalization
+```{r}
+plot_box <- function(mat, metadata, group, main = "", ylab = "log2(counts+1)") {
+  df <- as.data.frame(mat)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1)) |>
+    left_join(metadata, by = "sample")
+
+  ggplot(df_long, aes(x = sample, y = value, fill= .data[[group]])) +
+    geom_boxplot(outlier.size = 0.2) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+    labs(title = main, x = "Sample", y = ylab, fill=group)
+}
+
+plot_density <- function(mat, metadata, group, main = "", xlab="log2(counts+1)") {
+  df <- as.data.frame(mat)
+  df_long <- df |>
+    mutate(gene = rownames(df)) |>
+    pivot_longer(-gene, names_to = "sample", values_to = "value") |>
+    mutate(value = log2(value + 1)) |>
+    left_join(metadata, by = "sample")
+
+  ggplot(df_long, aes(x = value, colour = .data[[group]])) +
+    geom_density() +
+    theme_bw() +
+    labs(title = main, x = xlab, y = "Density", colour = group)
+}
+
+plot_box(df_normalized, samples_to_groups, "group", main="Boxplot of normalized expression for GSE226507", ylab="log2(CPM + 1)")
+plot_density(df_normalized, samples_to_groups, "group", main="Density plot of normalized expression for GSE226507", xlab="log2(CPM + 1)")
+
+plot_box(df_mapped_filtered, samples_to_groups, "group", main="Boxplot of raw expression for GSE226507")
+plot_density(df_mapped_filtered, samples_to_groups, "group", main="Density plot of raw expression for GSE226507")
+
+```
 ## 4. Differential Gene Expression
+
+## 5. Conclusion
+To summarize my findings and report, I will answer the following questions:
+1. Why is the dataset of interest to you?
+2. What are the control and test conditions of the dataset?
+3. How many samples in each of the conditions of your dataset?
+4. Were there expression values that were not unique for specific genes? How did you handle these?
+5. Were there expression values that could not be mapped to current HUGO symbols?
+6. Were there any outliers in your dataset? How were they handled in the originating paper? How many outliers were removed?
+7. How did you handle replicates?
+8. What is the final coverage of your dataset?
+
+## 6. References
 
